@@ -6,6 +6,9 @@
 
 > 仅支持 macOS。非 OpenAI 官方项目，也未获得 OpenAI 背书。
 
+当前引擎基于 [Codex Dream Skin Studio v1.5.14](https://github.com/Fei-Away/Codex-Dream-Skin/tree/v1.5.14/macos)
+的公开教程与运行时，并在它的新版选择器、安全恢复和菜单栏架构上加入梁祖专属视频滑块。
+
 ## 特点
 
 - 一张 16:9 壁纸连续覆盖侧栏和主界面，不使用伪造 UI 截图。
@@ -31,6 +34,9 @@ git clone https://github.com/hackermengzhi/dsh-liang-codex-skin.git
 cd dsh-liang-codex-skin
 ./scripts/install-dream-skin-macos.sh --no-launch
 ```
+
+安装前请先完全退出 Codex。安装完成后正常打开 Codex，再运行桌面的
+`Codex Dream Skin.command`；如果 Codex 已在运行，启动器会要求明确确认后才重启应用。
 
 也可以克隆后双击：
 
@@ -79,6 +85,24 @@ Install Codex Dream Skin.command
 ~/.codex/codex-dream-skin-studio/scripts/verify-dream-skin-macos.sh --reload
 ```
 
+新版不会把 Codex 本体注册成 `launchctl submit` 或 KeepAlive 作业；Codex 始终通过
+macOS 普通 `open -na` 启动。后台作业只负责皮肤注入器，不会在你退出 Codex 后反复拉起它。
+
+## 紧急恢复
+
+如果界面异常，先完全退出 Codex，然后运行：
+
+```bash
+~/.codex/codex-dream-skin-studio/scripts/restore-dream-skin-macos.sh
+```
+
+它会关闭皮肤注入器、撤销 CDP 参数并恢复保存的原生外观；不会修改或替换 Codex
+应用包。如果只是暂时停用皮肤，可运行：
+
+```bash
+~/.codex/codex-dream-skin-studio/scripts/pause-dream-skin-macos.sh
+```
+
 ## 从 DSH 版本迁移了什么
 
 本项目改编自
@@ -109,7 +133,7 @@ npm test
   --theme-dir presets/preset-liang-ancestor
 ```
 
-测试覆盖脚本语法、载荷构建、图片与视频限制、滑块清理和持久化、路径穿越、符号链接、预设播种、
+测试覆盖脚本语法、载荷构建、图片与视频限制、0–30 滑块清理和持久化、新版 Codex 选择器、路径穿越、符号链接、预设播种、
 配置原子写入、PID 复用保护、签名检查和 Restore 往返。
 
 ## 许可与素材声明

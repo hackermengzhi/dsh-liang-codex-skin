@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import path from "node:path";
+import { decodeAndValidateSafeCss } from "../assets/safe-css-validator.mjs";
+import { runtimeThemeContentFingerprint } from "./theme-content-fingerprint.mjs";
 
 const [sourceDirArg, stageDirArg] = process.argv.slice(2);
 if (!sourceDirArg || !stageDirArg) {
@@ -8,8 +10,9 @@ if (!sourceDirArg || !stageDirArg) {
 }
 
 const MAX_CONFIG_BYTES = 1024 * 1024;
-const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 16 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 10 * 1024 * 1024;
+const MAX_CSS_BYTES = 256 * 1024;
 const OPEN_FLAGS = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0);
 
 function assertContained(rootPath, candidatePath, label) {
@@ -51,6 +54,15 @@ async function readStableFile(filePath, label, maxBytes) {
     return { bytes, stat: after };
   } finally {
     await handle.close();
+  }
+}
+
+async function readOptionalStableFile(filePath, label, maxBytes) {
+  try {
+    return await readStableFile(filePath, label, maxBytes);
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
   }
 }
 
@@ -97,49 +109,48 @@ async function main() {
 
   const imagePath = path.resolve(sourceRoot, theme.image);
   assertContained(sourceRoot, imagePath, "Theme image");
-  const image = await readStableFile(imagePath, "Theme image", MAX_IMAGE_BYTES);
-  if (image.bytes.length < 1) throw new Error("Theme image is empty");
-
-  let video = null;
   let videoName = null;
   if (theme.intensity?.video !== undefined) {
     videoName = theme.intensity.video;
-    if (
-      typeof videoName !== "string"
-      || !videoName
-      || path.basename(videoName) !== videoName
-      || videoName === "theme.json"
-      || videoName === theme.image
-      || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(videoName)
-    ) {
-      throw new Error("Intensity video must be a separate file inside its theme directory");
+    if (typeof videoName !== "string" || !videoName || path.basename(videoName) !== videoName ||
+      videoName === "theme.json" || videoName === theme.image ||
+      /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(videoName) ||
+      ![".webm", ".mp4"].includes(path.extname(videoName).toLowerCase())) {
+      throw new Error("Intensity video must be a separate WebM or MP4 file inside its theme directory");
     }
-    const extension = path.extname(videoName).toLowerCase();
-    if (![".webm", ".mp4"].includes(extension)) {
-      throw new Error("Intensity video must be WebM or MP4");
-    }
-    const videoPath = path.resolve(sourceRoot, videoName);
-    assertContained(sourceRoot, videoPath, "Intensity video");
-    video = await readStableFile(videoPath, "Intensity video", MAX_VIDEO_BYTES);
-    if (video.bytes.length < 1) throw new Error("Intensity video is empty");
+    assertContained(sourceRoot, path.resolve(sourceRoot, videoName), "Intensity video");
   }
+  const [image, safeCss, video] = await Promise.all([
+    readStableFile(imagePath, "Theme image", MAX_IMAGE_BYTES),
+    readOptionalStableFile(path.join(sourceRoot, "theme.css"), "Theme Safe CSS", MAX_CSS_BYTES),
+    videoName
+      ? readStableFile(path.resolve(sourceRoot, videoName), "Intensity video", MAX_VIDEO_BYTES)
+      : Promise.resolve(null),
+  ]);
+  if (image.bytes.length < 1) throw new Error("Theme image is empty");
+  if (safeCss) decodeAndValidateSafeCss(safeCss.bytes);
 
   const stageRoot = await fs.realpath(stageDirArg);
   const stageStat = await fs.stat(stageRoot);
   if (!stageStat.isDirectory()) throw new Error("Theme stage must be a directory");
   assertContained(stageRoot, path.join(stageRoot, "theme.json"), "Staged theme config");
   assertContained(stageRoot, path.join(stageRoot, theme.image), "Staged theme image");
-  if (videoName) {
-    assertContained(stageRoot, path.join(stageRoot, videoName), "Staged intensity video");
-  }
+  if (videoName) assertContained(stageRoot, path.join(stageRoot, videoName), "Staged intensity video");
 
   // Write both files from the already-open, stable descriptors. The caller
   // publishes the image first and theme.json last, so the watcher only ever
   // observes a complete pair; subsequent source edits cannot race the copy.
   await writeExclusive(path.join(stageRoot, theme.image), image.bytes);
+  if (safeCss) await writeExclusive(path.join(stageRoot, "theme.css"), safeCss.bytes);
   if (video && videoName) await writeExclusive(path.join(stageRoot, videoName), video.bytes);
   await writeExclusive(path.join(stageRoot, "theme.json"), config.bytes);
-  process.stdout.write(theme.image);
+  process.stdout.write(JSON.stringify({
+    image: theme.image,
+    video: videoName,
+    contentFingerprint: runtimeThemeContentFingerprint(
+      theme, image.bytes, safeCss?.bytes ?? null, video?.bytes ?? null,
+    ),
+  }));
 }
 
 await main();

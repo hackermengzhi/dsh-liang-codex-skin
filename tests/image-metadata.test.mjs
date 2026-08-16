@@ -7,31 +7,32 @@ import {
   MAX_IMAGE_PIXELS,
   classifyImageDimensions,
   readImageMetadata,
+  readRawDimensions,
 } from "../scripts/image-metadata.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const macosRoot = path.resolve(here, "..");
 
-const wallpaper = await fs.readFile(path.join(macosRoot, "assets", "liang-ancestor.jpg"));
-assert.deepEqual(readImageMetadata(wallpaper, ".jpg"), {
-  width: 2560,
-  height: 1440,
-  ratio: 2560 / 1440,
+const portal = await fs.readFile(path.join(macosRoot, "assets", "portal-hero.png"));
+assert.deepEqual(readImageMetadata(portal, ".png"), {
+  width: 2168,
+  height: 725,
+  ratio: 2168 / 725,
   wide: true,
-  aspect: "wide",
-  taskMode: "ambient",
+  aspect: "ultrawide",
+  taskMode: "banner",
 });
-const malformedJpeg = Buffer.from(wallpaper);
-malformedJpeg[0] = 0;
-assert.equal(readImageMetadata(malformedJpeg, ".jpg"), null);
+const malformedPng = Buffer.from(portal);
+malformedPng[0] = 0;
+assert.equal(readImageMetadata(malformedPng, ".png"), null);
 
-const preset = await fs.readFile(path.join(
+const liang = await fs.readFile(path.join(
   macosRoot,
   "presets",
   "preset-liang-ancestor",
   "background.jpg",
 ));
-assert.deepEqual(readImageMetadata(preset, ".jpg"), {
+assert.deepEqual(readImageMetadata(liang, ".jpg"), {
   width: 2560,
   height: 1440,
   ratio: 2560 / 1440,
@@ -104,4 +105,16 @@ assert.deepEqual(readImageMetadata(vp8x, ".webp"), {
 
 assert.equal(readImageMetadata(new Uint8Array([0, 1, 2, 3]), ".png"), null);
 
-console.log("PASS: image dimensions strictly classify PNG, JPEG, VP8L, and VP8X profiles.");
+// readRawDimensions returns real pixel dimensions even beyond the safety caps,
+// so a preflight can reject decompression bombs before anything decodes them.
+assert.deepEqual(readRawDimensions(portal, ".png"), { width: 2168, height: 725 });
+const oversized = new Uint8Array(24);
+oversized.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+oversized.set([0x00, 0x00, 0x00, 0x0d], 8); // IHDR chunk length
+writeAscii(oversized, 12, "IHDR");
+oversized.set([0x00, 0x00, 0x4e, 0x20], 16); // width 20000
+oversized.set([0x00, 0x00, 0x4e, 0x20], 20); // height 20000
+assert.deepEqual(readRawDimensions(oversized, ".png"), { width: 20000, height: 20000 });
+assert.equal(readImageMetadata(oversized, ".png"), null); // 400 MP exceeds the cap
+
+console.log("PASS: image dimensions strictly classify PNG, JPEG, VP8L, and VP8X profiles, and readRawDimensions bypasses caps.");

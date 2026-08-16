@@ -10,6 +10,7 @@ if [ -z "${HOME:-}" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+. "$SCRIPT_DIR/localization-macos.sh"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 INJECTOR="$SCRIPT_DIR/injector.mjs"
 INSTALL_ROOT="$HOME/.codex/codex-dream-skin-studio"
@@ -29,7 +30,7 @@ CODEX_APP_JOB_LABEL="com.openai.codex-dream-skin-studio.app"
 INJECTOR_JOB_LABEL="com.openai.codex-dream-skin-studio.injector"
 EXPECTED_CODEX_TEAM_ID="2DC432GLL2"
 EXPECTED_CODEX_REQUIREMENT="anchor apple generic and certificate leaf[subject.OU] = \"$EXPECTED_CODEX_TEAM_ID\""
-SKIN_VERSION="1.2.0"
+SKIN_VERSION="1.5.14"
 DREAM_SKIN_VALIDATED_RUNTIME_PID=""
 DREAM_SKIN_VALIDATED_RUNTIME_BUNDLE=""
 DREAM_SKIN_VALIDATED_RUNTIME_EXE=""
@@ -348,6 +349,22 @@ codex_main_pids() {
 
 codex_is_running() {
   [ -n "$(codex_main_pids)" ]
+}
+
+active_theme_appearance() {
+  "$NODE" -e '
+const fs = require("node:fs");
+let appearance = "auto";
+try { appearance = JSON.parse(fs.readFileSync(process.argv[1], "utf8")).appearance; } catch {}
+process.stdout.write(appearance === "light" || appearance === "dark" ? appearance : "auto");
+' "$THEME_DIR/theme.json"
+}
+
+# Pin Codex appearanceTheme to the staged theme's declared appearance (or put
+# the user's original line back for auto themes). Callers must only run this
+# while Codex is closed; config writes race the app's own saves otherwise.
+sync_appearance_pin() {
+  "$NODE" "$SCRIPT_DIR/theme-config.mjs" install "$CONFIG_PATH" "$THEME_BACKUP_PATH" "$(active_theme_appearance)"
 }
 
 process_started_at() {
@@ -777,7 +794,7 @@ hot_reapply_theme() {
   ensure_node_runtime || return 1
   verified_cdp_endpoint "$port" || return 1
   [ -n "$operation_token" ] || operation_token="$(new_operation_token)"
-  write_operation_state applying "正在应用已选主题" "$operation_token" || return 1
+  write_operation_state applying "$(dreamskin_text applying_selected_theme)" "$operation_token" || return 1
   operation_args=(--operation-token "$operation_token")
 
   injector_protocol="$(state_field injectorProtocol 2>/dev/null || true)"
@@ -796,7 +813,7 @@ hot_reapply_theme() {
   if [ -n "$inj_pid" ] && /bin/kill -0 "$inj_pid" 2>/dev/null \
     && [ "$injector_mode" != "control" ]; then
     mark_state_active || return 1
-    write_operation_state success "皮肤已应用" "$operation_token" || return 1
+    write_operation_state success "$(dreamskin_text skin_applied)" "$operation_token" || return 1
     return 0
   fi
   stop_recorded_injector 2>/dev/null || return 1
@@ -806,7 +823,7 @@ hot_reapply_theme() {
   codex_pid="$(codex_main_pids 2>/dev/null | /usr/bin/head -n 1)"
   [ -n "$started_at" ] || started_at="$(/bin/date)"
   write_state "$port" "$inj_pid" "$started_at" "${codex_pid:-0}" active
-  write_operation_state success "皮肤已应用" "$operation_token" || return 1
+  write_operation_state success "$(dreamskin_text skin_applied)" "$operation_token" || return 1
   return 0
 }
 
