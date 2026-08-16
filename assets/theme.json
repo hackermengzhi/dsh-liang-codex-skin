@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "preset-liang-ancestor",
+  "name": "滑动变祖 · 梁祖",
+  "brandSubtitle": "LIANG ANCESTOR · CODEX",
+  "tagline": "推理至深，梁祖降临。",
+  "projectPrefix": "选择项目 · ",
+  "projectLabel": "◉  选择项目",
+  "statusText": "梁祖皮肤已启用",
+  "quote": "MAKE SOMETHING WONDERFUL",
+  "image": "liang-ancestor.jpg",
+  "appearance": "dark",
+  "art": {
+    "focusX": 0.78,
+    "focusY": 0.46,
+    "safeArea": "left",
+    "taskMode": "ambient"
+  },
+  "colors": {
+    "background": "#111111",
+    "panel": "#1e1b19",
+    "panelAlt": "#29231e",
+    "accent": "#c19a49",
+    "accentAlt": "#d5b56e",
+    "secondary": "#b8b4a9",
+    "highlight": "#9b3f32",
+    "text": "#f4f1e8",
+    "muted": "#b8b4a9",
+    "line": "rgba(193, 154, 73, .28)"
+  }
+}
