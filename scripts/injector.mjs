@@ -15,6 +15,7 @@ const SKIN_VERSION = "1.2.0";
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const CDP_ID_PATTERN = /^[A-Za-z0-9._-]{1,200}$/;
 const MAX_ART_BYTES = 16 * 1024 * 1024;
+const MAX_INTENSITY_VIDEO_BYTES = 16 * 1024 * 1024;
 const OPERATION_UI_HOST_ID = "chatgpt-dream-skin-operation";
 const OPERATION_UI_REGISTRY_KEY = "__CHATGPT_DREAM_SKIN_OPERATION_UI__";
 const OPERATION_KINDS = new Set(["apply", "pause", "switch"]);
@@ -452,6 +453,48 @@ async function loadTheme(themeDir) {
     throw new Error(`${configPath} has an invalid image field`);
   }
   if (path.basename(raw.image) !== raw.image) throw new Error("Theme image must stay inside its theme directory");
+  if (raw.intensity !== undefined && (
+    !raw.intensity || typeof raw.intensity !== "object" || Array.isArray(raw.intensity)
+  )) {
+    throw new Error(`${configPath} has an invalid intensity field`);
+  }
+  const rawIntensity = raw.intensity || {};
+  let intensityVideoName = null;
+  if (rawIntensity.video !== undefined) {
+    if (
+      typeof rawIntensity.video !== "string"
+      || !rawIntensity.video
+      || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(rawIntensity.video)
+      || path.basename(rawIntensity.video) !== rawIntensity.video
+    ) {
+      throw new Error(`${configPath} has an invalid intensity.video field`);
+    }
+    const videoExtension = path.extname(rawIntensity.video).toLowerCase();
+    if (![".webm", ".mp4"].includes(videoExtension)) {
+      throw new Error(`Unsupported intensity video format: ${videoExtension || "missing"}`);
+    }
+    intensityVideoName = rawIntensity.video;
+  }
+  const intensityDefaultLevel = rawIntensity.defaultLevel === undefined
+    ? 30 : rawIntensity.defaultLevel;
+  if (
+    typeof intensityDefaultLevel !== "number"
+    || !Number.isFinite(intensityDefaultLevel)
+    || intensityDefaultLevel < 0
+    || intensityDefaultLevel > 30
+  ) {
+    throw new Error(`${configPath} has an invalid intensity.defaultLevel field`);
+  }
+  const intensityStorageKey = rawIntensity.storageKey === undefined
+    ? "codex-dream-skin.intensity" : rawIntensity.storageKey;
+  if (
+    typeof intensityStorageKey !== "string"
+    || !intensityStorageKey.trim()
+    || Array.from(intensityStorageKey).length > 120
+    || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(intensityStorageKey)
+  ) {
+    throw new Error(`${configPath} has an invalid intensity.storageKey field`);
+  }
   const text = (value, fallback, max, name) => {
     if (value === undefined) return fallback;
     if (typeof value !== "string" || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value)) {
@@ -527,6 +570,13 @@ async function loadTheme(themeDir) {
   if (Object.values(art).some((value) => value !== undefined)) {
     theme.art = Object.fromEntries(Object.entries(art).filter(([, value]) => value !== undefined));
   }
+  if (intensityVideoName) {
+    theme.intensity = {
+      video: intensityVideoName,
+      defaultLevel: intensityDefaultLevel,
+      storageKey: intensityStorageKey,
+    };
+  }
   const requestedImagePath = path.join(assetsRoot, theme.image);
   let imagePath;
   try {
@@ -542,6 +592,7 @@ async function loadTheme(themeDir) {
     throw new Error(`Unsupported theme image format: ${extension || "missing"}`);
   }
   let imageHandle;
+  let artBytes;
   try {
     imageHandle = await fs.open(imagePath, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
   } catch (error) {
@@ -560,14 +611,64 @@ async function loadTheme(themeDir) {
     ) {
       throw new Error(`Theme image must be a stable non-empty file no larger than ${MAX_ART_BYTES} bytes`);
     }
-    const art = await imageHandle.readFile();
-    if (art.length < 1 || art.length > MAX_ART_BYTES) {
+    artBytes = await imageHandle.readFile();
+    if (artBytes.length < 1 || artBytes.length > MAX_ART_BYTES) {
       throw new Error(`Theme image must be a non-empty file no larger than ${MAX_ART_BYTES} bytes`);
     }
-    return { art, assetsRoot, extension, imagePath, theme };
   } finally {
     await imageHandle.close();
   }
+
+  let intensityVideo = null;
+  if (intensityVideoName) {
+    const requestedVideoPath = path.join(assetsRoot, intensityVideoName);
+    let videoPath;
+    try {
+      videoPath = await fs.realpath(requestedVideoPath);
+    } catch (error) {
+      if (error.code === "ENOENT") throw new Error(`Intensity video is missing: ${requestedVideoPath}`);
+      throw error;
+    }
+    assertContainedPath(assetsRoot, videoPath, "Intensity video");
+    const videoStat = await fs.stat(videoPath);
+    let videoHandle;
+    try {
+      videoHandle = await fs.open(videoPath, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+    } catch (error) {
+      if (error.code === "ELOOP") throw new Error("Intensity video changed into a symbolic link while loading");
+      throw error;
+    }
+    try {
+      const openedStat = await videoHandle.stat();
+      if (
+        !videoStat.isFile()
+        || !openedStat.isFile()
+        || videoStat.dev !== openedStat.dev
+        || videoStat.ino !== openedStat.ino
+        || openedStat.size < 1
+        || openedStat.size > MAX_INTENSITY_VIDEO_BYTES
+      ) {
+        throw new Error(
+          `Intensity video must be a stable non-empty file no larger than ${MAX_INTENSITY_VIDEO_BYTES} bytes`,
+        );
+      }
+      const bytes = await videoHandle.readFile();
+      if (bytes.length < 1 || bytes.length > MAX_INTENSITY_VIDEO_BYTES) {
+        throw new Error(
+          `Intensity video must be a non-empty file no larger than ${MAX_INTENSITY_VIDEO_BYTES} bytes`,
+        );
+      }
+      const videoExtension = path.extname(intensityVideoName).toLowerCase();
+      intensityVideo = {
+        bytes,
+        mime: videoExtension === ".mp4" ? "video/mp4" : "video/webm",
+      };
+    } finally {
+      await videoHandle.close();
+    }
+  }
+
+  return { art: artBytes, assetsRoot, extension, imagePath, intensityVideo, theme };
 }
 
 async function loadStaticPayloadAssets() {
@@ -596,7 +697,7 @@ async function loadPayload(themeDir) {
     loadTheme(themeDir),
   ]);
   const { css, template } = staticAssets;
-  const { art, extension, theme } = loaded;
+  const { art, extension, intensityVideo, theme } = loaded;
   const styleRevision = createHash("sha256").update(css).digest("hex").slice(0, 20);
   const artMetadata = readImageMetadata(art, extension);
   if (!artMetadata) {
@@ -608,22 +709,28 @@ async function loadPayload(themeDir) {
   const mime = extension === ".jpg" || extension === ".jpeg" ? "image/jpeg"
     : extension === ".webp" ? "image/webp" : "image/png";
   const artDataUrl = `data:${mime};base64,${art.toString("base64")}`;
+  const intensityVideoDataUrl = intensityVideo
+    ? `data:${intensityVideo.mime};base64,${intensityVideo.bytes.toString("base64")}`
+    : "";
   const revision = createHash("sha256")
     .update(SKIN_VERSION)
     .update(css)
     .update(template)
     .update(JSON.stringify(theme))
+    .update(intensityVideo?.bytes ?? "")
     .digest("hex")
     .slice(0, 20);
   const payload = template
     .replace("__DREAM_SKIN_CSS_JSON__", JSON.stringify(css))
     .replace("__DREAM_SKIN_ART_JSON__", JSON.stringify(artDataUrl))
+    .replace("__DREAM_SKIN_INTENSITY_VIDEO_JSON__", JSON.stringify(intensityVideoDataUrl))
     .replace("__DREAM_SKIN_THEME_JSON__", JSON.stringify(theme))
     .replace("__DREAM_SKIN_VERSION_JSON__", JSON.stringify(SKIN_VERSION))
     .replace("__DREAM_SKIN_STYLE_REVISION_JSON__", JSON.stringify(styleRevision))
     .replace("__DREAM_SKIN_PAYLOAD_REVISION_JSON__", JSON.stringify(revision));
   return {
     imageBytes: art.length,
+    videoBytes: intensityVideo?.bytes.length ?? 0,
     payload,
     revision,
     theme,
@@ -809,6 +916,8 @@ async function removeFromSession(session) {
     document.documentElement?.style.removeProperty('--dream-skin-art');
     document.getElementById('codex-dream-skin-style')?.remove();
     document.getElementById('codex-dream-skin-chrome')?.remove();
+    document.getElementById('codex-liang-intensity-media')?.remove();
+    document.getElementById('codex-liang-intensity-control')?.remove();
     delete window.__CODEX_DREAM_SKIN_STATE__;
     return true;
   })()`);
@@ -819,6 +928,8 @@ async function verifyRemovedSession(session) {
     !document.documentElement.classList.contains('codex-dream-skin') &&
     !document.getElementById('codex-dream-skin-style') &&
     !document.getElementById('codex-dream-skin-chrome') &&
+    !document.getElementById('codex-liang-intensity-media') &&
+    !document.getElementById('codex-liang-intensity-control') &&
     !window.__CODEX_DREAM_SKIN_STATE__
   )()`);
 }
@@ -865,6 +976,9 @@ async function verifySession(session, expectedThemeId = null, expectedRevision =
     const composer = box(document.querySelector('.composer-surface-chrome'));
     const sidebar = box(document.querySelector('aside.app-shell-left-panel'));
     const chrome = document.getElementById('codex-dream-skin-chrome');
+    const intensityControl = document.getElementById('codex-liang-intensity-control');
+    const intensityMedia = document.getElementById('codex-liang-intensity-media');
+    const intensityRange = intensityControl?.querySelector('input[type="range"]');
     const result = {
       installed: document.documentElement.classList.contains('codex-dream-skin'),
       version: window.__CODEX_DREAM_SKIN_STATE__?.version ?? null,
@@ -873,6 +987,15 @@ async function verifySession(session, expectedThemeId = null, expectedRevision =
       stylePresent: Boolean(document.getElementById('codex-dream-skin-style')),
       chromePresent: Boolean(chrome),
       chromePointerEvents: getComputedStyle(chrome || document.body).pointerEvents,
+      intensityEnabled: Boolean(window.__CODEX_DREAM_SKIN_STATE__?.intensityEnabled),
+      intensityControl: box(intensityControl),
+      intensityMediaPointerEvents: intensityMedia
+        ? getComputedStyle(intensityMedia).pointerEvents : null,
+      intensityRange: intensityRange ? {
+        min: intensityRange.min,
+        max: intensityRange.max,
+        value: intensityRange.value,
+      } : null,
       homeRoute: Boolean(homeRoute),
       homePresent: Boolean(home),
       hero,
@@ -897,6 +1020,10 @@ async function verifySession(session, expectedThemeId = null, expectedRevision =
     const expectedRevision = ${JSON.stringify(expectedRevision)};
     const payloadPass = (!expectedThemeId || result.themeId === expectedThemeId) &&
       (!expectedRevision || result.revision === expectedRevision);
+    const intensityPass = !result.intensityEnabled || (
+      result.intensityControl?.visible && result.intensityMediaPointerEvents === 'none' &&
+      result.intensityRange?.min === '0' && result.intensityRange?.max === '30'
+    );
     // Project selector markup varies across Codex builds — soft requirement.
     const homePass = !result.homeRoute || (
       result.homePresent && result.hero?.visible && result.hero.width >= 280 &&
@@ -905,7 +1032,7 @@ async function verifySession(session, expectedThemeId = null, expectedRevision =
         result.suggestionLabelColorsMatch
       ))
     );
-    result.pass = Boolean(basePass && homePass && payloadPass);
+    result.pass = Boolean(basePass && homePass && payloadPass && intensityPass);
     result.expectedThemeId = expectedThemeId;
     result.expectedRevision = expectedRevision;
     result.softNotes = {
@@ -1801,6 +1928,7 @@ if (path.resolve(process.argv[1] || "") === path.resolve(scriptPath)) {
         themeId: loaded.theme.id,
         themeName: loaded.theme.name,
         imageBytes: loaded.imageBytes,
+        videoBytes: loaded.videoBytes,
         payloadBytes: Buffer.byteLength(loaded.payload),
         artMetadata: loaded.theme.artMetadata ?? null,
         timings: loaded.timings,

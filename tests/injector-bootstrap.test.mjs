@@ -78,7 +78,12 @@ assert.match(
 );
 assert.match(
   source,
-  /const suggestionLabelColorsMatch = visibleSuggestionLabels\.every\([\s\S]{0,2500}visibleSuggestionLabels\.length >= result\.visibleCardCount[\s\S]{0,160}result\.suggestionLabelColorsMatch/,
+  /const suggestionLabelColorsMatch = visibleSuggestionLabels\.every\(/,
+  "Live verification must inspect every visible home suggestion label.",
+);
+assert.match(
+  source,
+  /visibleSuggestionLabels\.length >= result\.visibleCardCount\s*&&\s*result\.suggestionLabelColorsMatch/,
   "Live verification must reject visible home suggestion labels that diverge from the themed card color.",
 );
 

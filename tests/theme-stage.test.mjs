@@ -33,9 +33,16 @@ try {
   await fs.mkdir(source, { recursive: true });
   await fs.mkdir(stage);
   await fs.copyFile(fixtureAsset, path.join(source, "background-a.png"));
+  await fs.writeFile(path.join(source, "evolution.webm"), Buffer.from("fixture-video"));
   await fs.writeFile(
     path.join(source, "theme.json"),
-    `${JSON.stringify({ schemaVersion: 1, id: "preset-race", name: "A", image: "background-a.png" })}\n`,
+    `${JSON.stringify({
+      schemaVersion: 1,
+      id: "preset-race",
+      name: "A",
+      image: "background-a.png",
+      intensity: { video: "evolution.webm", defaultLevel: 30 },
+    })}\n`,
   );
 
   const imageName = await runStage(source, stage);
@@ -43,6 +50,10 @@ try {
   const stagedConfig = JSON.parse(await fs.readFile(path.join(stage, "theme.json"), "utf8"));
   assert.equal(stagedConfig.image, "background-a.png");
   const stagedBeforeMutation = await fs.readFile(path.join(stage, "background-a.png"));
+  assert.equal(
+    (await fs.readFile(path.join(stage, "evolution.webm"))).toString(),
+    "fixture-video",
+  );
 
   // A source edit after staging must not change the pair that is about to be
   // published. This is the regression for switch-theme's old copy-after-

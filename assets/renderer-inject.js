@@ -1,8 +1,10 @@
-((cssText, artDataUrl, themeConfig) => {
+((cssText, artDataUrl, intensityVideoDataUrl, themeConfig) => {
   const STATE_KEY = "__CODEX_DREAM_SKIN_STATE__";
   const DISABLED_KEY = "__CODEX_DREAM_SKIN_DISABLED__";
   const STYLE_ID = "codex-dream-skin-style";
   const CHROME_ID = "codex-dream-skin-chrome";
+  const INTENSITY_MEDIA_ID = "codex-liang-intensity-media";
+  const INTENSITY_CONTROL_ID = "codex-liang-intensity-control";
   const SHELL_ATTR = "data-dream-shell";
   const ART_ATTRS = [
     "data-dream-art-wide", "data-dream-art-safe", "data-dream-task-mode",
@@ -14,6 +16,9 @@
   const PAYLOAD_REVISION = __DREAM_SKIN_PAYLOAD_REVISION_JSON__;
   const THEME = themeConfig && typeof themeConfig === "object" ? themeConfig : {};
   const ART = THEME.art && typeof THEME.art === "object" ? THEME.art : {};
+  const INTENSITY = THEME.intensity && typeof THEME.intensity === "object"
+    ? THEME.intensity : null;
+  const LIANG_RANKS = ["小难梁", "牢梁", "梁子", "梁圣", "梁神", "梁祖"];
   const ART_METADATA = THEME.artMetadata && typeof THEME.artMetadata === "object"
     ? THEME.artMetadata : null;
   const ANALYSIS_CACHE_KEY = "__CODEX_DREAM_SKIN_ANALYSIS_CACHE__";
@@ -55,14 +60,20 @@
   window[DISABLED_KEY] = false;
 
   const previous = window[STATE_KEY];
-  const artUrl = (() => {
-    const comma = artDataUrl.indexOf(",");
-    const mime = /^data:([^;,]+)/.exec(artDataUrl)?.[1] || "image/png";
-    const binary = atob(artDataUrl.slice(comma + 1));
+  previous?.intensity?.dispose?.();
+  const dataUrlToObjectUrl = (dataUrl, fallbackMime) => {
+    if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) return null;
+    const comma = dataUrl.indexOf(",");
+    if (comma < 0) return null;
+    const mime = /^data:([^;,]+)/.exec(dataUrl)?.[1] || fallbackMime;
+    const binary = atob(dataUrl.slice(comma + 1));
     const bytes = new Uint8Array(binary.length);
     for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
     return URL.createObjectURL(new Blob([bytes], { type: mime }));
-  })();
+  };
+  const artUrl = dataUrlToObjectUrl(artDataUrl, "image/png");
+  const intensityVideoUrl = INTENSITY
+    ? dataUrlToObjectUrl(intensityVideoDataUrl, "video/webm") : null;
 
   if (previous?.observer) previous.observer.disconnect();
   if (previous?.rootObserver) previous.rootObserver.disconnect();
@@ -527,6 +538,187 @@
   let chromeParts = null;
   let observedShellMain = null;
   let resizeObserver = null;
+  let intensityParts = null;
+  let intensityVideoRevoked = false;
+  const revokeIntensityVideoUrl = () => {
+    if (!intensityVideoRevoked && intensityVideoUrl) {
+      URL.revokeObjectURL(intensityVideoUrl);
+      intensityVideoRevoked = true;
+    }
+  };
+
+  const intensityStorageKey = typeof INTENSITY?.storageKey === "string"
+    ? INTENSITY.storageKey : "codex-dream-skin.intensity";
+  const intensityDefaultLevel = clamp(Number(INTENSITY?.defaultLevel ?? 30), 0, 30);
+  const storedIntensityLevel = (() => {
+    try {
+      const value = Number(localStorage.getItem(intensityStorageKey));
+      return Number.isFinite(value) ? clamp(value, 0, 30) : intensityDefaultLevel;
+    } catch {
+      return intensityDefaultLevel;
+    }
+  })();
+  let intensityLevel = storedIntensityLevel;
+
+  const rankForLevel = (level) => {
+    const index = level >= 30 ? LIANG_RANKS.length - 1 : Math.floor(level / 6);
+    return LIANG_RANKS[clamp(index, 0, LIANG_RANKS.length - 1)];
+  };
+
+  const applyIntensity = (rawLevel, { persist = false } = {}) => {
+    const level = clamp(Math.round(Number(rawLevel) || 0), 0, 30);
+    const ratio = level / 30;
+    intensityLevel = level;
+    const root = document.documentElement;
+    if (root) {
+      setAttribute(root, "data-liang-intensity", String(level));
+      setAttribute(root, "data-liang-stage", String(level >= 30 ? 5 : Math.floor(level / 6)));
+      setStyleProperty(root, "--liang-intensity", ratio.toFixed(4));
+      setStyleProperty(root, "--liang-level", String(level));
+      if (intensityVideoUrl && !intensityParts?.media.hasAttribute("data-video-error")) {
+        setStyleProperty(
+          root,
+          "--dream-skin-art",
+          "linear-gradient(90deg, #111 0%, #111 44%, #0b0a09 100%)",
+        );
+      }
+      const eased = ratio ** 1.65;
+      const channel = (from, to) => Math.round(from + (to - from) * eased);
+      const accent = {
+        r: channel(120, 193),
+        g: channel(124, 154),
+        b: channel(118, 73),
+      };
+      const accentAlt = {
+        r: channel(166, 213),
+        g: channel(169, 181),
+        b: channel(161, 110),
+      };
+      setStyleProperty(root, "--ds-green", rgbToHex(accent));
+      setStyleProperty(root, "--ds-lime", rgbToHex(accentAlt));
+      setStyleProperty(root, "--ds-accent-rgb", `${accent.r} ${accent.g} ${accent.b}`);
+      setStyleProperty(root, "--ds-accent-alt-rgb", `${accentAlt.r} ${accentAlt.g} ${accentAlt.b}`);
+    }
+    if (intensityParts) {
+      const { input, output, video, control } = intensityParts;
+      if (input.value !== String(level)) input.value = String(level);
+      input.setAttribute("aria-valuetext", `${rankForLevel(level)}，强度 ${level}`);
+      setTextContent(output, `${rankForLevel(level)} · ${level}/30`);
+      control.dataset.rank = String(level >= 30 ? 5 : Math.floor(level / 6));
+      if (video.readyState >= 1 && Number.isFinite(video.duration) && video.duration > 0) {
+        const target = Math.min(video.duration - 0.001, ratio * video.duration);
+        if (Math.abs(video.currentTime - target) > 0.012) video.currentTime = target;
+      }
+    }
+    if (persist) {
+      try { localStorage.setItem(intensityStorageKey, String(level)); } catch {}
+    }
+  };
+
+  const ensureIntensity = (home) => {
+    if (!INTENSITY || !intensityVideoUrl || !document.body) return;
+    let media = document.getElementById(INTENSITY_MEDIA_ID);
+    let control = document.getElementById(INTENSITY_CONTROL_ID);
+    if (!media || !control || !intensityParts) {
+      media?.remove();
+      control?.remove();
+
+      media = document.createElement("div");
+      media.id = INTENSITY_MEDIA_ID;
+      media.setAttribute("aria-hidden", "true");
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "auto";
+      video.src = intensityVideoUrl;
+      video.tabIndex = -1;
+      media.appendChild(video);
+
+      control = document.createElement("section");
+      control.id = INTENSITY_CONTROL_ID;
+      control.setAttribute("aria-label", "滑动变祖强度控制");
+      control.innerHTML = `
+        <div class="liang-intensity__header">
+          <span class="liang-intensity__title"><i></i>滑动变祖</span>
+          <output class="liang-intensity__value" aria-live="polite"></output>
+        </div>
+        <div class="liang-intensity__rail-shell">
+          <div class="liang-intensity__aura" aria-hidden="true"></div>
+          <div class="liang-intensity__ticks" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <input class="liang-intensity__range" type="range" min="0" max="30" step="1"
+            aria-label="梁祖视觉强度，0 到 30">
+        </div>
+        <div class="liang-intensity__stages" aria-hidden="true">
+          <span>小难梁</span><span>牢梁</span><span>梁子</span>
+          <span>梁圣</span><span>梁神</span><span>梁祖</span>
+        </div>`;
+      const input = control.querySelector(".liang-intensity__range");
+      const output = control.querySelector(".liang-intensity__value");
+      const onInput = () => applyIntensity(input.value);
+      const onChange = () => applyIntensity(input.value, { persist: true });
+      const onPointerDown = () => control.setAttribute("data-interacting", "true");
+      const onPointerUp = () => {
+        control.removeAttribute("data-interacting");
+        applyIntensity(input.value, { persist: true });
+      };
+      const onMetadata = () => {
+        video.pause();
+        applyIntensity(intensityLevel);
+      };
+      const onError = () => {
+        media.setAttribute("data-video-error", "true");
+        setStyleProperty(document.documentElement, "--dream-skin-art", `url("${artUrl}")`);
+      };
+      input.addEventListener("input", onInput);
+      input.addEventListener("change", onChange);
+      input.addEventListener("pointerdown", onPointerDown);
+      input.addEventListener("pointerup", onPointerUp);
+      input.addEventListener("pointercancel", onPointerUp);
+      input.addEventListener("blur", onPointerUp);
+      video.addEventListener("loadedmetadata", onMetadata);
+      video.addEventListener("error", onError);
+      document.body.append(media, control);
+      intensityParts = {
+        control,
+        input,
+        media,
+        output,
+        video,
+        videoUrl: intensityVideoUrl,
+        dispose() {
+          input.removeEventListener("input", onInput);
+          input.removeEventListener("change", onChange);
+          input.removeEventListener("pointerdown", onPointerDown);
+          input.removeEventListener("pointerup", onPointerUp);
+          input.removeEventListener("pointercancel", onPointerUp);
+          input.removeEventListener("blur", onPointerUp);
+          video.removeEventListener("loadedmetadata", onMetadata);
+          video.removeEventListener("error", onError);
+          video.pause();
+          media.remove();
+          control.remove();
+          revokeIntensityVideoUrl();
+        },
+      };
+    }
+    intensityParts.control.dataset.route = home ? "home" : "task";
+    intensityParts.media.dataset.route = home ? "home" : "task";
+    applyIntensity(intensityLevel);
+  };
+
+  const intensityController = {
+    dispose() {
+      if (intensityParts) {
+        const parts = intensityParts;
+        intensityParts = null;
+        parts.dispose();
+      } else {
+        revokeIntensityVideoUrl();
+      }
+    },
+  };
 
   const ensureStyle = (root) => {
     let style = document.getElementById(STYLE_ID);
@@ -633,6 +825,7 @@
       chrome.dataset.dreamShell = shell;
       metrics.attributeWrites += 1;
     }
+    ensureIntensity(Boolean(home));
   };
 
   const ensure = ({ root: rootPass = true, route = true, layout = true } = {}) => {
@@ -658,6 +851,13 @@
     document.querySelectorAll(".dream-skin-home-utility").forEach((node) => node.classList.remove("dream-skin-home-utility"));
     document.getElementById(STYLE_ID)?.remove();
     document.getElementById(CHROME_ID)?.remove();
+    intensityController.dispose();
+    document.getElementById(INTENSITY_MEDIA_ID)?.remove();
+    document.getElementById(INTENSITY_CONTROL_ID)?.remove();
+    document.documentElement?.removeAttribute("data-liang-intensity");
+    document.documentElement?.removeAttribute("data-liang-stage");
+    document.documentElement?.style.removeProperty("--liang-intensity");
+    document.documentElement?.style.removeProperty("--liang-level");
     state?.observer?.disconnect();
     state?.rootObserver?.disconnect();
     state?.resizeObserver?.disconnect();
@@ -731,6 +931,8 @@
     mediaQuery,
     mediaHandler,
     artUrl,
+    intensity: intensityController,
+    intensityEnabled: Boolean(INTENSITY && intensityVideoUrl),
     installToken,
     analysis: artAnalysis,
     artMetadata: ART_METADATA,
@@ -786,4 +988,9 @@
     shell: resolvedShell(),
     analysis: artAnalysis,
   };
-})(__DREAM_SKIN_CSS_JSON__, __DREAM_SKIN_ART_JSON__, __DREAM_SKIN_THEME_JSON__)
+})(
+  __DREAM_SKIN_CSS_JSON__,
+  __DREAM_SKIN_ART_JSON__,
+  __DREAM_SKIN_INTENSITY_VIDEO_JSON__,
+  __DREAM_SKIN_THEME_JSON__,
+)

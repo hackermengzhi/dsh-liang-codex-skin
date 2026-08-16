@@ -9,6 +9,7 @@ if (!sourceDirArg || !stageDirArg) {
 
 const MAX_CONFIG_BYTES = 1024 * 1024;
 const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 16 * 1024 * 1024;
 const OPEN_FLAGS = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0);
 
 function assertContained(rootPath, candidatePath, label) {
@@ -99,16 +100,44 @@ async function main() {
   const image = await readStableFile(imagePath, "Theme image", MAX_IMAGE_BYTES);
   if (image.bytes.length < 1) throw new Error("Theme image is empty");
 
+  let video = null;
+  let videoName = null;
+  if (theme.intensity?.video !== undefined) {
+    videoName = theme.intensity.video;
+    if (
+      typeof videoName !== "string"
+      || !videoName
+      || path.basename(videoName) !== videoName
+      || videoName === "theme.json"
+      || videoName === theme.image
+      || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(videoName)
+    ) {
+      throw new Error("Intensity video must be a separate file inside its theme directory");
+    }
+    const extension = path.extname(videoName).toLowerCase();
+    if (![".webm", ".mp4"].includes(extension)) {
+      throw new Error("Intensity video must be WebM or MP4");
+    }
+    const videoPath = path.resolve(sourceRoot, videoName);
+    assertContained(sourceRoot, videoPath, "Intensity video");
+    video = await readStableFile(videoPath, "Intensity video", MAX_VIDEO_BYTES);
+    if (video.bytes.length < 1) throw new Error("Intensity video is empty");
+  }
+
   const stageRoot = await fs.realpath(stageDirArg);
   const stageStat = await fs.stat(stageRoot);
   if (!stageStat.isDirectory()) throw new Error("Theme stage must be a directory");
   assertContained(stageRoot, path.join(stageRoot, "theme.json"), "Staged theme config");
   assertContained(stageRoot, path.join(stageRoot, theme.image), "Staged theme image");
+  if (videoName) {
+    assertContained(stageRoot, path.join(stageRoot, videoName), "Staged intensity video");
+  }
 
   // Write both files from the already-open, stable descriptors. The caller
   // publishes the image first and theme.json last, so the watcher only ever
   // observes a complete pair; subsequent source edits cannot race the copy.
   await writeExclusive(path.join(stageRoot, theme.image), image.bytes);
+  if (video && videoName) await writeExclusive(path.join(stageRoot, videoName), video.bytes);
   await writeExclusive(path.join(stageRoot, "theme.json"), config.bytes);
   process.stdout.write(theme.image);
 }

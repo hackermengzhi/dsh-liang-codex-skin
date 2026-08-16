@@ -52,6 +52,7 @@ fi
       id: payload.themeId,
       name: payload.themeName,
       imageBytes: payload.imageBytes,
+      videoBytes: payload.videoBytes,
       payloadBytes: payload.payloadBytes,
     },
   };

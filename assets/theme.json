@@ -9,6 +9,11 @@
   "statusText": "梁祖皮肤已启用",
   "quote": "MAKE SOMETHING WONDERFUL",
   "image": "liang-ancestor.jpg",
+  "intensity": {
+    "video": "liang-evolution.webm",
+    "defaultLevel": 30,
+    "storageKey": "liang-ancestor-codex.level"
+  },
   "appearance": "dark",
   "art": {
     "focusX": 0.78,

@@ -193,6 +193,7 @@ fi
   seed_bundled_presets
   [ -f "$themes/preset-liang-ancestor/theme.json" ] || exit 1
   [ -f "$themes/preset-liang-ancestor/background.jpg" ] || exit 1
+  [ -f "$themes/preset-liang-ancestor/liang-evolution.webm" ] || exit 1
   [ -f "$themes/custom-keepme/theme.json" ] || exit 1
   for id in $retired; do [ ! -e "$themes/$id" ] || exit 1; done
   seeded="$(/usr/bin/find "$themes" -maxdepth 1 -type d -name "preset-*" | /usr/bin/wc -l | /usr/bin/tr -d " ")"

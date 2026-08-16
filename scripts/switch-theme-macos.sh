@@ -82,6 +82,13 @@ THEME_IMAGE="$("$NODE" "$SCRIPT_DIR/stage-theme.mjs" "$SRC" "$stage")" \
 THEME_BYTES="$(/usr/bin/stat -f '%z' "$stage/$THEME_IMAGE")"
 [ "$THEME_BYTES" -gt 0 ] && [ "$THEME_BYTES" -le 16777216 ] \
   || fail "Theme image must be non-empty and no larger than 16 MB."
+THEME_VIDEO="$("$NODE" -e 'try{const t=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(t.intensity?.video||"")}catch{}' "$stage/theme.json")"
+if [ -n "$THEME_VIDEO" ]; then
+  [ -f "$stage/$THEME_VIDEO" ] || fail "Theme intensity video is missing."
+  VIDEO_BYTES="$(/usr/bin/stat -f '%z' "$stage/$THEME_VIDEO")"
+  [ "$VIDEO_BYTES" -gt 0 ] && [ "$VIDEO_BYTES" -le 16777216 ] \
+    || fail "Theme intensity video must be non-empty and no larger than 16 MB."
+fi
 /bin/chmod 600 "$stage/"*
 for entry in "$stage/"*; do
   [ -f "$entry" ] || continue
@@ -91,8 +98,14 @@ done
 # theme.json is the commit marker: the watcher never observes a config that
 # references a partially copied image.
 /bin/mv -f "$stage/theme.json" "$THEME_DIR/theme.json"
-/usr/bin/find "$THEME_DIR" -maxdepth 1 -type f \
-  ! -name 'theme.json' ! -name "$THEME_IMAGE" -delete
+for entry in "$THEME_DIR"/*; do
+  [ -f "$entry" ] || continue
+  entry_name="$(/usr/bin/basename "$entry")"
+  [ "$entry_name" = "theme.json" ] && continue
+  [ "$entry_name" = "$THEME_IMAGE" ] && continue
+  [ -n "$THEME_VIDEO" ] && [ "$entry_name" = "$THEME_VIDEO" ] && continue
+  /bin/rm -f "$entry"
+done
 /bin/rm -rf "$stage"
 stage=""
 

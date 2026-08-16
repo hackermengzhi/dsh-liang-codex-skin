@@ -117,6 +117,31 @@ assert.match(
 );
 assert.match(
   css,
+  /#codex-liang-intensity-media\s*\{[\s\S]{0,180}pointer-events:\s*none;/,
+  "The Liang evolution media layer must never intercept native Codex interaction.",
+);
+assert.match(
+  css,
+  /#codex-liang-intensity-control\s*\{[\s\S]{0,900}pointer-events:\s*auto;/,
+  "Only the dedicated Liang intensity controller should accept pointer input.",
+);
+assert.match(
+  template,
+  /type="range" min="0" max="30" step="1"/,
+  "The renderer should expose the complete 0–30 Liang intensity range.",
+);
+assert.match(
+  template,
+  /video\.currentTime = target/,
+  "Dragging the slider must scrub the local evolution video.",
+);
+assert.match(
+  template,
+  /localStorage\.setItem\(intensityStorageKey, String\(level\)\)/,
+  "Committed Liang intensity should persist locally.",
+);
+assert.match(
+  css,
   /\.thread-scroll-container \.bg-gradient-to-t\.from-token-main-surface-primary\s*\{[\s\S]{0,100}background:\s*transparent !important;/,
   "Wide artwork should remove the native opaque fade behind the sticky composer.",
 );
@@ -313,6 +338,7 @@ function createFixture(theme, {
   const payloadFor = (nextTheme, cssText = ".fixture { color: blue; }") => template
     .replace("__DREAM_SKIN_CSS_JSON__", JSON.stringify(cssText))
     .replace("__DREAM_SKIN_ART_JSON__", JSON.stringify("data:image/png;base64,AA=="))
+    .replace("__DREAM_SKIN_INTENSITY_VIDEO_JSON__", JSON.stringify(""))
     .replace("__DREAM_SKIN_THEME_JSON__", JSON.stringify(nextTheme))
     .replace("__DREAM_SKIN_VERSION_JSON__", JSON.stringify("test"))
     .replace("__DREAM_SKIN_STYLE_REVISION_JSON__", JSON.stringify(cssText))

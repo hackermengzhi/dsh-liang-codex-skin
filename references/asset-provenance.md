@@ -15,5 +15,17 @@
 - Rights: excluded from the MIT software license. The upstream repository had no
   license at review time; redistribution and commercial-use rights are not established.
 
-Run `shasum -a 256 references/upstream/stage-30.png assets/liang-ancestor.jpg`
+## Liang evolution video
+
+- Upstream repository: `https://github.com/kingOfSoySauce/dsh-liang-skin`
+- Upstream commit: `3d7ceacb8e75f1e03188d5c50f61da474f6ae2b4`
+- Upstream path: `assets/liang-evolution.webm`
+- Local runtime copies: `assets/liang-evolution.webm` and
+  `presets/preset-liang-ancestor/liang-evolution.webm`
+- SHA-256: `216f2bace19a9b8f11473272930e2549abb6a5e9a33b5434a58c4ecb6578c181`
+- Derivation: unchanged copy of the upstream WebM used as the 0–30 slider timeline.
+- Rights: excluded from the MIT software license. The upstream repository had no
+  license at review time; redistribution and commercial-use rights are not established.
+
+Run `shasum -a 256 references/upstream/stage-30.png assets/liang-ancestor.jpg assets/liang-evolution.webm`
 to verify the checked-in files.
