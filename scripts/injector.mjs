@@ -252,6 +252,9 @@ export function assessRendererVerification(renderer, nativeWindow, expected) {
   const intensityPass = !result.intensityEnabled || (
     Boolean(result.intensityControl?.visible)
     && result.intensityMediaPointerEvents === "none"
+    && Number.isFinite(result.intensityNativeRootZIndex)
+    && Number.isFinite(result.intensityMediaZIndex)
+    && result.intensityNativeRootZIndex > result.intensityMediaZIndex
     && result.intensityRange?.min === "0"
     && result.intensityRange?.max === "30"
   );
@@ -1257,7 +1260,13 @@ export async function verifySession(session, expectedThemeId = null, expectedRev
     const genericInput = box(document.querySelector('[data-ds-part="composer"]'));
     const intensityControl = document.getElementById('codex-liang-intensity-control');
     const intensityMedia = document.getElementById('codex-liang-intensity-media');
+    const intensityNativeRoot = document.querySelector('[data-dream-skin-native-root="true"]');
     const intensityRange = intensityControl?.querySelector('input[type="range"]');
+    const numericZIndex = (node) => {
+      if (!node) return null;
+      const value = Number.parseInt(getComputedStyle(node).zIndex, 10);
+      return Number.isFinite(value) ? value : null;
+    };
     const settingsBoxes = [
       box(document.querySelector(${selectorLiteral("settings-panel")})),
       box(document.querySelector(${selectorLiteral("appearance-radio")})),
@@ -1298,6 +1307,8 @@ export async function verifySession(session, expectedThemeId = null, expectedRev
       intensityEnabled: Boolean(runtime?.intensityEnabled),
       intensityControl: box(intensityControl),
       intensityMediaPointerEvents: intensityMedia ? getComputedStyle(intensityMedia).pointerEvents : null,
+      intensityMediaZIndex: numericZIndex(intensityMedia),
+      intensityNativeRootZIndex: numericZIndex(intensityNativeRoot),
       intensityRange: intensityRange ? {
         min: intensityRange.min,
         max: intensityRange.max,

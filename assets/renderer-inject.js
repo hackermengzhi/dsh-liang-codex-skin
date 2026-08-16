@@ -643,6 +643,10 @@
 
   const ensureIntensity = (home) => {
     if (!INTENSITY || !intensityVideoUrl || !document.body) return;
+    const nativeRoot = Array.from(document.body.children).find((child) =>
+      child.id !== INTENSITY_MEDIA_ID && child.id !== INTENSITY_CONTROL_ID
+      && child.tagName !== "SCRIPT" && child.tagName !== "STYLE");
+    if (nativeRoot) setAttribute(nativeRoot, "data-dream-skin-native-root", "true");
     let media = document.getElementById(INTENSITY_MEDIA_ID);
     let control = document.getElementById(INTENSITY_CONTROL_ID);
     if (!media || !control || !intensityParts) {

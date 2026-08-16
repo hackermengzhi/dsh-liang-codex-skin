@@ -1320,6 +1320,18 @@ html[data-dream-skin="active"] [data-ds-part="message"] { border-radius: 16px; }
 
 /* Liang 0–30 evolution timeline. Only the range control accepts input; the
    full-window video and all energy effects remain transparent to hit testing. */
+html[data-dream-skin="active"] body {
+  isolation: isolate;
+}
+
+/* The video is a body-level fixed layer. Keep the complete native application
+   root in a higher stacking context so an opaque video frame can never cover
+   the sidebar, thread, composer, menus, or keyboard focus target. */
+html[data-dream-skin="active"] [data-dream-skin-native-root="true"] {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
 html[data-dream-skin="active"] #codex-liang-intensity-media {
   position: fixed;
   z-index: 0;

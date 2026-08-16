@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import vm from "node:vm";
-import { SKIN_VERSION, verifySession, waitForVerifiedSession } from "../scripts/injector.mjs";
+import {
+  SKIN_VERSION,
+  assessRendererVerification,
+  verifySession,
+  waitForVerifiedSession,
+} from "../scripts/injector.mjs";
 
 // Mirrors macos/assets/selectors.json — keep these in sync when that file's
 // selector strings change, since this mock's querySelector matches by exact
@@ -141,6 +146,32 @@ test("visible L1 renderer passes exact macOS verification", async () => {
   assert.equal(result.pass, true);
   assert.equal(result.shell.visible, true);
   assert.equal(result.sidebar.visible, true);
+});
+
+test("intensity verification rejects a video layer that can cover the native app", async () => {
+  const baseline = await verify();
+  const renderer = {
+    ...baseline,
+    intensityEnabled: true,
+    intensityControl: { visible: true },
+    intensityMediaPointerEvents: "none",
+    intensityMediaZIndex: 0,
+    intensityNativeRootZIndex: 1,
+    intensityRange: { min: "0", max: "30", value: "30" },
+  };
+  const expected = {
+    skinVersion: SKIN_VERSION,
+    expectedThemeId: "fixture-theme",
+    expectedRevision: "fixture-revision",
+  };
+  assert.equal(
+    assessRendererVerification(renderer, baseline.nativeWindow, expected).checks.intensityPass,
+    true,
+  );
+  renderer.intensityNativeRootZIndex = 0;
+  const covered = assessRendererVerification(renderer, baseline.nativeWindow, expected);
+  assert.equal(covered.checks.intensityPass, false);
+  assert.equal(covered.pass, false);
 });
 
 test("CSS-hidden, detached, and offscreen anchors cannot satisfy L1", async () => {

@@ -321,6 +321,8 @@ export async function runRendererRuntimeTest(assetRoot) {
   assert.match(template, /video\.currentTime = target/);
   assert.match(template, /localStorage\.setItem\(intensityStorageKey, String\(level\)\)/);
   assert.match(css, /#codex-liang-intensity-media\s*\{[\s\S]{0,180}pointer-events:\s*none;/);
+  assert.match(template, /data-dream-skin-native-root/);
+  assert.match(css, /\[data-dream-skin-native-root="true"\]\s*\{[\s\S]{0,160}z-index:\s*1\s*!important;/);
   assert.match(css, /#codex-liang-intensity-control\s*\{[\s\S]{0,1100}pointer-events:\s*auto;/);
   assert.match(template, /CSSStyleSheet/);
   assert.match(template, /window\.navigation/);

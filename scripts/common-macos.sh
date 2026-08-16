@@ -368,7 +368,10 @@ sync_appearance_pin() {
 }
 
 process_started_at() {
-  /bin/ps -p "$1" -o lstart= 2>/dev/null | /usr/bin/awk '{$1=$1; print}'
+  # Persist a locale-independent identity. A watcher started from a Chinese
+  # Finder session otherwise records `日 8/16 ...`, then cannot be stopped by
+  # a recovery shell running under an English locale.
+  LC_ALL=C /bin/ps -p "$1" -o lstart= 2>/dev/null | /usr/bin/awk '{$1=$1; print}'
 }
 
 recorded_injector_process_matches() {
